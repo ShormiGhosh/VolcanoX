@@ -452,13 +452,59 @@ void drawResearchDrone(const Shader& sh, const MeshLibrary& lib, const Vec3& pos
 }
 
 // =======================================================================
+// Collision shapes (circles on the ground). They are derived from the SAME numbers as the draw functions
+// above, so a collider always sits where its object is drawn.
+// =======================================================================
+void burntTreeColliders(const Vec3& pos, float scale, int seed, std::vector<Collider>& out) {
+    Collider trunk; trunk.x = pos.x; trunk.z = pos.z; trunk.r = 0.4f * scale; trunk.kind = KindBurntTree;
+    out.push_back(trunk);
+    for (int i = 0; i < 2; ++i) {           // the charred debris at its foot (see drawBurntTree)
+        float ang = 360.0f * i / 2.0f + hashNoise(seed * 17 + i) * 90.0f;
+        float dist = 0.5f * scale + 0.3f * scale * hashNoise(seed * 19 + i);
+        Collider c;
+        c.x = pos.x + dist * std::cos(radians(ang)); c.z = pos.z + dist * std::sin(radians(ang));
+        c.r = 0.3f * scale; c.kind = KindRock;
+        out.push_back(c);
+    }
+}
+
+// A point in the hut's local frame (x, z), carried to the world by the hut's transform T(pos) * R_y(rotation).
+static void hutPoint(const Vec3& pos, float rotationDeg, float lx, float lz, float& wx, float& wz) {
+    Mat4 m = Mat4::translate(pos) * Mat4::rotateY(radians(rotationDeg));
+    wx = m.m[0] * lx + m.m[8] * lz + m.m[12];
+    wz = m.m[2] * lx + m.m[10] * lz + m.m[14];
+}
+
+void burntHutColliders(const Vec3& pos, float rotationDeg, std::vector<Collider>& out) {
+    // The walls cover 3.2 x 2.6: three overlapping circles along the width.
+    for (int k = -1; k <= 1; ++k) {
+        Collider c; c.r = 1.3f; c.kind = KindHut;
+        hutPoint(pos, rotationDeg, 1.1f * k, 0.0f, c.x, c.z);
+        out.push_back(c);
+    }
+    for (int i = 0; i < 3; ++i) {           // the debris around the base (see drawBurntHut)
+        float ang = 100.0f * i + 20.0f, dist = 2.6f + 0.6f * i;
+        Collider c; c.r = 0.3f + 0.1f * i; c.kind = KindRock;
+        hutPoint(pos, rotationDeg, dist * std::cos(radians(ang)), dist * std::sin(radians(ang)), c.x, c.z);
+        out.push_back(c);
+    }
+}
+
+void windmillColliders(const Vec3& pos, std::vector<Collider>& out) {
+    Collider c; c.x = pos.x; c.z = pos.z; c.r = 0.85f; c.kind = KindWindmill;   // the stone footing is 1.1 wide
+    out.push_back(c);
+}
+
+// =======================================================================
 // Controllable vehicles: rover, helicopter (+ helipad) and boat.
 //   Each is a transform hierarchy: a body transform T * R_y(heading) * lean, and children
 //   (wheels, rotors, radar) that move with it and also spin relative to it. The pilot drone
 //   in drawResearchDrone is the fourth.
 // =======================================================================
-void drawRover(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float yawRad, float rollRad, float wheelAngle) {
-    Mat4 base = Mat4::translate(pos) * Mat4::rotateY(yawRad) * Mat4::rotateZ(rollRad);
+void drawRover(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float yawRad, float rollRad, float wheelAngle,
+               float pitchRad) {
+    // Heading, then the bump/lean: pitch (nose dive) about the lateral axis and roll about the long axis.
+    Mat4 base = Mat4::translate(pos) * Mat4::rotateY(yawRad) * Mat4::rotateX(pitchRad) * Mat4::rotateZ(rollRad);
     const float yel[3] = { 0.85f, 0.65f, 0.08f };
 
     // Chassis, cabin with a windscreen, payload mast with a sensor dish, and two headlights.

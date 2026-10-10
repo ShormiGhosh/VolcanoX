@@ -111,13 +111,49 @@ void drawCraterRimRocks(const Shader& sh, const MeshLibrary& lib, const Vec3& cr
 // =======================================================================
 // Lava pool + flow channel
 // =======================================================================
-void drawLavaPool(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float time, float sizeScale) {
-    // Slow, saturating growth: scale(t) = min(S_max, k*t). A pure
-    // transformation, independent of the (deferred) travelling-glow shading.
-    float grown = sizeScale * std::min(8.0f, 1.6f + 0.25f * time);
-    // Lifted slightly above the ground top (y=0.1) to avoid z-fighting stripes.
-    Mat4 model = Mat4::translate(pos + Vec3(0, 0.04f, 0)) * Mat4::scale(Vec3(grown, 1.0f, grown));
-    drawMesh(sh, lib.poolDisc, model, 0.80f, 0.25f, 0.04f);
+void drawLavaPool(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float time, float arrivalTime, const Vec3& inflowDir) {
+    // The basin fills once the flow that feeds it has arrived: radius = R_max * smoothstep(t_a - 3, t_a + 22, t).
+    const float kMaxRadius = 7.5f;
+    const float R = kMaxRadius * smoothstepf(arrivalTime - 3.0f, arrivalTime + 22.0f, time);
+    if (R < 0.15f) return;
+
+    // Flat layers, each lifted a little above the last (the ground top is y = 0.1).
+    const float yCrust = pos.y + 0.04f, yCore = pos.y + 0.07f, yIn = pos.y + 0.10f, yPlate = pos.y + 0.13f;
+
+    // 1) Cooled crust: the whole pool, dark red. This is the poolDisc mesh, so its tessellation still follows + / -.
+    sh.setFloat("uEmit", 0.30f);
+    drawMesh(sh, lib.poolDisc, Mat4::translate(Vec3(pos.x, yCrust, pos.z)) * Mat4::scale(Vec3(R, 1.0f, R)), 0.36f, 0.08f, 0.025f);
+
+    // 2) Molten core: bright and flickering, with a slow breathing radius. Same mesh as the crust, so the
+    //    Gouraud-vs-Phong highlight demo (a glossy, flat, low-polygon surface) still works on it.
+    float flick = 0.5f + 0.5f * std::sin(2.1f * time) * std::sin(0.7f * time + 1.0f);
+    float coreR = R * 0.82f * (1.0f + 0.03f * std::sin(1.7f * time));
+    sh.setFloat("uEmit", 0.62f + 0.16f * flick);
+    drawMesh(sh, lib.poolDisc, Mat4::translate(Vec3(pos.x, yCore, pos.z)) * Mat4::scale(Vec3(coreR, 1.0f, coreR)),
+             0.95f, 0.26f + 0.10f * flick, 0.04f);
+
+    // 3) Inflow: a hot patch on the side the flow arrives from, pulsing with the same travelling wave as the flow.
+    float wave = 0.5f + 0.5f * std::sin(26.0f - time * 3.0f);
+    Vec3 in = pos + inflowDir * (0.50f * R);
+    float inR = R * (0.26f + 0.05f * wave);
+    sh.setFloat("uEmit", 1.0f);
+    drawMesh(sh, lib.poolDisc, Mat4::translate(Vec3(in.x, yIn, in.z)) * Mat4::scale(Vec3(inR, 1.0f, inR)), 1.0f, 0.70f + 0.15f * wave, 0.22f);
+
+    // 4) Crust plates: dark slabs carried round by the circulation of the lake, faster in the middle than at
+    //    the edge. Each one grows, breaks up and sinks, then re-forms: scale = 0.6 + 0.4 sin(0.35 t + phase).
+    sh.setInt("uMat", MatRock);                     // a crust is matte, unlike the glossy melt
+    sh.setFloat("uEmit", 0.06f);
+    for (int k = 0; k < 10; ++k) {
+        float rf = 0.12f + 0.68f * rnd01(k * 7 + 1);                          // radial position, as a fraction of R
+        float ang = 6.2831853f * rnd01(k * 13 + 2) + 0.16f * (1.15f - rf) * time;
+        float life = 0.6f + 0.4f * std::sin(0.35f * time + 6.0f * rnd01(k * 5 + 3));
+        float s = R * (0.11f + 0.09f * rnd01(k * 3 + 4)) * life;
+        Mat4 m = Mat4::translate(Vec3(pos.x + std::cos(ang) * rf * R, yPlate, pos.z + std::sin(ang) * rf * R))
+               * Mat4::rotateY(2.0f * ang + k) * Mat4::scale(Vec3(s * 1.4f, 1.0f, s));
+        drawMesh(sh, lib.disc, m, 0.12f, 0.05f, 0.04f);
+    }
+    sh.setInt("uMat", MatLava);
+    sh.setFloat("uEmit", 0.6f);
 }
 
 void drawLavaFlowChannel(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, const Vec3& poolPos, float baseR, float height) {
@@ -201,7 +237,7 @@ void lavaFlowSamples(const LavaFlowStyle& st, float baseR, float height, float t
         int i = std::min(last, int((k + 0.5f) / count * last));
         float u = float(i) / kFlowSegs;
         float pulse = 0.5f + 0.5f * std::sin(u * 26.0f - time * 3.0f);
-        float heat = 0.10f * pulse + ((i > last - 8) ? 0.25f : 0.0f);
+        float heat = 0.22f * pulse + ((i > last - 8) ? 0.25f : 0.0f);
         float r = std::sqrt(pts[i].x * pts[i].x + pts[i].z * pts[i].z);
         float width = st.widthStart + (st.widthEnd - st.widthStart) * u;
         if (r < baseR) width = std::min(width, 0.28f * r + 0.3f);
@@ -214,6 +250,12 @@ void lavaFlowSamples(const LavaFlowStyle& st, float baseR, float height, float t
         fs.length = segLen * float(last) / count;
         out.push_back(fs);
     }
+}
+
+Vec3 lavaFlowEnd(const LavaFlowStyle& st, float baseR, float height) {
+    Vec3 pts[kFlowSegs + 1];
+    flowPoints(st, baseR, height, pts);
+    return pts[kFlowSegs];
 }
 
 void drawLavaFlow(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseR, float height,
@@ -243,7 +285,8 @@ void drawLavaFlow(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPo
         // Bright pulses travel down the flow; the front end is hottest.
         float pulse = 0.5f + 0.5f * std::sin(u * 26.0f - time * 3.0f);
         float front = (i > last - 8) ? 0.25f : 0.0f;
-        float heat = 0.10f * pulse + front;
+        // Bright pulses travel down the flow, clearly visible now (amplitude 0.22; it was 0.10).
+        float heat = 0.22f * pulse + front;
 
         Mat4 model = Mat4::translate(mid) * Mat4::rotateY(yaw) * Mat4::rotateX(-pitch)
                    * Mat4::scale(Vec3(width, 0.24f, segLen * 1.3f));
@@ -260,6 +303,7 @@ void drawLavaFlow(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPo
             float side = (k - 1.5f) * 0.32f * w;
             float fwd = w * (0.15f + 0.35f * (0.5f + 0.5f * hashNoise(k * 7 + int(st.azimuthDeg))));
             float sz = w * (0.42f + 0.25f * (0.5f + 0.5f * hashNoise(k * 5 + 2)));
+            sz *= 1.0f + 0.07f * std::sin(1.6f * time + 1.9f * k);   // the front breathes: lava keeps moving at its tip
             Mat4 model = Mat4::translate(tip + Vec3(0.0f, 0.03f, 0.0f))
                        * Mat4::rotateY(yaw) * Mat4::translate(Vec3(side, 0.0f, fwd))
                        * Mat4::rotateY(radians(60.0f * k)) * Mat4::scale(Vec3(sz, 0.14f, sz * 0.9f));
@@ -323,6 +367,8 @@ static void launchBallistic(BallisticSlot& s, const Vec3& craterPos, float time,
 }
 
 static int s_activeDroplets = 0, s_activePuffs = 0;
+static std::vector<Collider> s_landedRocks;      // rebuilt by updateAndDrawRockChunks every frame
+void landedRockColliders(std::vector<Collider>& out) { out.insert(out.end(), s_landedRocks.begin(), s_landedRocks.end()); }
 int activeLavaDroplets() { return s_activeDroplets; }
 static const int kDropletPool = 24;   // was 8; bursts spawn droplets several times faster
 static Vec3 s_dropPos[kDropletPool];
@@ -389,6 +435,7 @@ void updateAndDrawRockChunks(const Shader& sh, const MeshLibrary& lib, const Vec
         nextSlot = (nextSlot + 1) % kCount;
     }
 
+    s_landedRocks.clear();
     for (int i = 0; i < kCount; ++i) {
         BallisticSlot& s = slots[i];
         if (!s.active) continue;
@@ -435,6 +482,10 @@ void updateAndDrawRockChunks(const Shader& sh, const MeshLibrary& lib, const Vec
                 glDepthMask(GL_TRUE);
             }
             sh.setFloat("uEmit", 0.85f * heat);
+        }
+        if (s.landed) {   // a rock lying on the ground is an obstacle (the rover bumps into it)
+            Collider c; c.x = p.x; c.z = p.z; c.r = 0.8f * size; c.kind = KindRock;
+            s_landedRocks.push_back(c);
         }
         Mat4 model = Mat4::translate(p) * Mat4::rotate(axis, spin) * Mat4::scale(size);
         drawMesh(sh, lib.rock[s.seed % 4], model,

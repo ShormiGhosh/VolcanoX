@@ -148,8 +148,9 @@ This is the single key map. The camera is a simple discrete-key orbit camera
 (`src/Camera.h`), deliberately not a mouse-look FPS camera, so a lab demo never
 depends on cursor capture behaving correctly on the grader's machine. It also
 resolves the old conflict: `+`/`-` zoom the camera today, but they are needed for tessellation,
-and `W`/`A`/`S`/`D` are needed for piloting. So **zoom moves to the mouse wheel
-and `PgUp`/`PgDn`**, and the arrow keys keep orbiting.
+and the keys that drive an object must not be letters (the first version used `W`/`A`/`S`/`D`; it
+was changed to the arrow keys on 2026-10-11 because `S` was hard to type). So **zoom moves to the mouse
+wheel and `PgUp`/`PgDn`**, and the arrow keys orbit the camera only while nothing is controlled.
 
 | Key | Action | Phase |
 |---|---|---|
@@ -159,8 +160,11 @@ and `PgUp`/`PgDn`**, and the arrow keys keep orbiting.
 | `C` | Camera: free orbit → Drone 1 → Drone 2 → Pilot drone → Rover → Helicopter → Boat → back | 1b |
 | `V` | Drone camera aim: lock on crater ↔ forward with gimbal tilt | 1b |
 | `Tab` | Cycle the controlled object: none → pilot drone → rover → helicopter → boat → none (§10.3) | 1b |
-| `W` / `S` | While controlling: forward / back | 1b |
-| `A` / `D` | While controlling: turn left / right | 1b |
+| `↑` / `↓` | While controlling: forward / back (arrow keys: no letter key is needed to drive) | 1b |
+| `←` / `→` | While controlling: turn left / right | 1b |
+| `Z` / `X` | Orbit the camera left / right (always available; the arrows orbit only while nothing is controlled) | 1b |
+| `Home` / `End` | Raise / lower the camera (always available) | 1b |
+| Left mouse drag | Orbit the camera (always available) | 1b |
 | `Space` / `Left Shift` | While controlling: up / down (drone and helicopter only) | 1b |
 | `P` | Pause time (day/night clock and animations stop) | 1b |
 | `E` | **Fire a big eruption burst now** (§13.5) | 1b |
@@ -217,7 +221,7 @@ src/Controller.h        The four controllable objects' state and limits: pilot d
                         helicopter, boat (header-only)
 src/Eruption.h          The eruption burst list: scheduled bursts, bursts fired with `E`, and the
                         intensity / plume / shake functions of time (header-only)
-src/Effects.cpp         The shockwave rings, pyroclastic flows, lake bombs and the lake splash
+src/Effects.cpp         The shockwave rings, lake bombs and the lake splash
 src/RayScene.h          Ray-tracing proxy scene and its C++ intersection code (header-only)
 src/PhotonMap.h         Inverse ray tracing: photons from the lava into the light map (header-only)
 src/Texture.h/.cpp      Procedural textures, the bitmap-font HUD and the minimap image
@@ -318,7 +322,6 @@ This is what the code does today. It is the reference, and PRD v1.2 §0.3 /
 | Ash/smoke cloud | Wind-bent umbrella above the crater. It **swells and climbs after each eruption burst and thins before the next** (§12) |
 | Eruption smoke | Every burst throws a plume of 22 puffs up from the vent, with a fire flash (§12) |
 | Shockwave | Every burst sends two expanding rings across the ground from the foot of the cone (§13.2) |
-| Pyroclastic flows | After a **big** burst, four dark ground-hugging flows roll down the slopes and out across the plain (§13.1) |
 | Volcanic bombs | The larger rock chunks glow white-hot and trail fire (§13.3); big bursts also throw a salvo of long-range bombs at the lake (§13.4) |
 | Lake splash | Where a bomb lands: fire flash, ripples, spray and steam (§13.4) |
 | Volcanic lightning | Bolts hang from a **storm-cloud layer** at `stormBaseY = 62`. One strike every 2.2 s (`kStrikePeriod`), two bolts per strike, drawn as thin boxes built from the fractal bolt polylines. `lightningFlash()` also lights the sky |
@@ -326,10 +329,10 @@ This is what the code does today. It is the reference, and PRD v1.2 §0.3 /
 | Wind indicators | **Removed.** No `drawWindIndicators`, no streak mesh. `windDir` still drives the ash cloud and the storm clouds |
 | Research drones | **Two**, orbiting the volcano: radius 30 and 38, height 16 and 20 (plus a bob), opposite directions. They face their direction of travel, with spinning propeller blades (Phase 1b) |
 | Pilot drone | Controllable object 1: a third drone, keyboard-flown (`Tab`). Starts hovering at about `(17, 14, 29)` facing the volcano |
-| Rover | Controllable object 2: a yellow research rover with a sensor mast, four spinning wheels and headlights. Starts at `(-28, 0.1, -2)` facing the volcano; kept between radius 22 and 150 |
+| Rover | Controllable object 2: a yellow research rover with a sensor mast, four spinning wheels and headlights. Starts at `(-28, 0.1, -2)` facing the volcano. **It collides** with trees, rocks, the hut, the windmill, the parked helicopter, the volcano's footprint, the lake and the world edge, and bumps (§16) |
 | Helicopter and helipad | Controllable object 3: a red helicopter on a helipad at `(5.9, 0, -33.5)`. It cannot move or turn until it has lifted off, and its rotor must spin up before it can climb |
 | Boat | Controllable object 4: a white research boat on the lake with a rotating radar, wave bobbing and a wake. Kept inside the lake's ellipse |
-| Lava | **Five** flows from `drawLavaFlow`: a long winding river (azimuth 20°, reaching radius 120), three braided rivulets (72°, 98°, 124°) and a broad sheet flow (322°). Each advances along its path (`grow = min(1, 0.25 + growSpeed·t)`) with a travelling colour pulse computed on the CPU. `drawLavaFlowChannel` and `drawGroundPlane` still exist but are not called. `drawLavaPool` **is called again** (Phase 2): a pool at `(-44, 0.1, 6)`, clear of every flow, that grows to radius 8 |
+| Lava | **Five** flows from `drawLavaFlow`: a long winding river (azimuth 20°, reaching radius 120), three braided rivulets (72°, 98°, 124°) and a broad sheet flow (322°). Each advances along its path (`grow = min(1, 0.25 + growSpeed·t)`) with a travelling colour pulse computed on the CPU. `drawLavaFlowChannel` and `drawGroundPlane` still exist but are not called. `drawLavaPool` **is called again**: it is the basin at the **end of the broad sheet flow** (§14.1), not a free-standing disc |
 | Lava droplets / ash puffs | Pools of **24** (was 8; bursts spawn them several times faster) and 6 |
 | Rock chunks | Pool of **36**, also spawned faster and thrown harder during a burst |
 | Volcano and crater | An **open-topped** cone plus a crater bowl (the inside wall, from the rim at y = 27 down to the floor at y = 25.1, radius 2.0). The glow disc (radius 1.8, pulsing) is the crater floor |
@@ -354,9 +357,11 @@ with vsync off (§8). PRD §14's frame-rate target is therefore met with a large
    highlight demo (PRD §12.2 Demo A) on the crater glow disc. That fails on geometry:
    the disc is small and its crater light sits in the disc's own plane, so no
    highlight ever forms on it. The fallback was the existing `drawLavaPool`, which
-   is now called again. At its first position (the foot of the river) the river's
-   boxes covered it, so it moved to `(-44, 0.1, 6)`. It is the one lava element
-   added back after "keep everything implemented".
+   is now called again. It first sat at the foot of the river (the river's boxes covered
+   it), then alone at `(-44, 0.1, 6)`, where it read as a flat orange disc with no lava
+   leading to it, so it now sits at the end of the sheet flow and only fills once the flow
+   arrives (§14.1). It is the one lava element added back after "keep everything
+   implemented".
 3. *Wind indicators stay removed;* the drone flight path stays.
 4. *Textures are a scope change* against the proposal. The PRD was updated
    (§3.2, §4, §10, §14). In the report, state that textures are generated
@@ -704,7 +709,7 @@ texture note for the report (§7, decision 4).
   changes listed in §9).
 - *Interim brightening.* The `uExposure` stand-in from Phase 1b was replaced by Phase 2's
   exposure; nothing of it remains.
-- *Pilot drone.* `W`/`S` forward and back, `A`/`D` turn (positive yaw turns left), `Space`/`Shift`
+- *Pilot drone.* `↑`/`↓` forward and back, `←`/`→` turn (positive yaw turns left), `Space`/`Shift`
   up and down. The lean uses `pitchVis = +tilt · speed / maxSpeed` (the formula in §10.3 has the
   wrong sign: nose down is a positive `rotateX`).
 - *Propellers.* Every drone has two crossed spinning blades per rotor plus a faint disc, not
@@ -835,8 +840,8 @@ fixed start position until you take control, for example about
 | Key | While controlling |
 |---|---|
 | `Tab` | Take / release control. On take-over the orbit camera retargets to follow the drone |
-| `W` / `S` | Forward / back along the heading |
-| `A` / `D` | Turn left / right (yaw) |
+| `↑` / `↓` | Forward / back along the heading |
+| `←` / `→` | Turn left / right (yaw) |
 | `Space` / `Left Shift` | Up / down |
 
 Motion is simple kinematics, integrated each frame with `dt` so it doesn't
@@ -866,7 +871,7 @@ an object the grader can steer. Make the propellers visibly spin (thin rotating
 blades; the translucent static discs hide rotation) at least on this drone.
 
 **Optional second object: a ground rover.** If a ground object is wanted too: a
-box chassis, four cylinder wheels and an antenna. `W`/`S` drive, `A`/`D`
+box chassis, four cylinder wheels and an antenna. `↑`/`↓` drive, `←`/`→`
 steer, and each wheel rotates by `distance / wheelRadius` (rotation relative to
 the chassis, i.e. a child transform). It stays outside the volcano's base
 radius and clear of the lake. `Tab` then cycles None → Pilot drone → Rover →
@@ -880,7 +885,7 @@ integrated from live input and nothing is stored in advance.
 
 **As built: four controllable objects.** The teacher asked for four. `Tab` cycles
 none → **pilot drone** → **rover** → **helicopter** → **boat** → none. All use the same keys
-(`W`/`S` forward and back, `A`/`D` turn; `Space`/`Shift` up and down for the aircraft), and each has
+(`↑`/`↓` forward and back, `←`/`→` turn; `Space`/`Shift` up and down for the aircraft), and each has
 an onboard camera in the `C` cycle (rover cab, helicopter nose, boat bow). The orbit camera follows
 whichever is selected; the others come to rest (the drone and helicopter hover).
 
@@ -929,7 +934,7 @@ and appear in reflections. A hill that sat on the lake was removed so the boat d
 - `C` steps through the cameras. In a drone view the drone's own body is not
   visible, and the sky is drawn correctly (no dome following the old camera).
 - Each orbiting drone faces its direction of travel.
-- `Tab` takes control of the pilot drone. `W`/`S`/`A`/`D`/`Space`/`Shift` move
+- `Tab` takes control of the pilot drone. `↑`/`↓`/`←`/`→`/`Space`/`Shift` move
   it smoothly at any frame rate, it leans into motion, and it can't be flown
   into the ground, into the volcano or through the storm layer.
 - Releasing control leaves the drone hovering where it was.
@@ -1242,26 +1247,18 @@ live; `--start <sec>` jumps to any moment.
 
 ---
 
-## 13. Eruption effects: pyroclastic flows, shockwave and shake, bombs, trigger key, lake splash
+## 13. Eruption effects: shockwave and shake, bombs, trigger key, lake splash
 
-Five additions to the eruption of §12. They all hang off the same burst list in `src/Eruption.h`, and
+Additions to the eruption of §12 (the pyroclastic flows among them were removed again, §13.1). They all hang off the same burst list in `src/Eruption.h`, and
 each is a closed-form function of time and of the burst start times.
 
-### 13.1 Pyroclastic flows (`Effects.cpp`, `drawPyroclastic`)
+### 13.1 Pyroclastic flows: built, then removed
 
-A **big** burst (every third scheduled burst, and every burst fired with `E`) sends four dark flows
-down the volcano 0.8 s after it starts. Each lobe is a train of 14 rows of three billowing puffs
-behind a front that races down the cone and slows as it spreads across the plain:
-
-```
-front(tau) = 95 · (1 − e^{−tau / 3.2})        distance from the rim; about 30 units/s at first
-row j sits at   rim + front − j · 2.4 · (1 + 0.05 tau)      (the train stretches as it goes)
-height          = ground (cone surface or plain) + 0.6 · puff radius + a slow billow
-```
-
-The puffs grow from radius 2 to about 7 with distance, are flattened (height × 0.75), and are lit dark
-ash. The first five rows **glow orange** at the start (`e^{−tau/1.4}`) and the whole flow fades out
-between 8 s and 14 s. Four lobes at hash-chosen azimuths, up to 168 draws per big burst.
+Four dark ground-hugging flows used to roll down the cone and spread across the plain after every big burst. They
+were **removed on 2026-10-11**: the smoke came out of the vent, came down the slope and spread over the whole ground,
+which does not read as realistic in this scene. `drawPyroclastic` and its call are gone, and `drawEruptionEffects` no
+longer takes the volcano's height. A big burst now differs from an ordinary one only by its size, its extra lake bombs
+(§13.4) and the stronger shockwave and shake that its size gives.
 
 ### 13.2 Shockwave and camera shake
 
@@ -1311,14 +1308,14 @@ since it landed:
 `E` fires an extra **big** burst at the current simulated time (`Eruption::trigger`). The schedule stays
 closed-form: the key only adds a start time to a short list (the last 8 are kept), and `Eruption::recent`
 merges that list with the scheduled bursts, sorted by start time. Everything above is evaluated from that merged
-list, so a fired burst gets the smoke plume, the shockwave, the shake, the pyroclastic flows, the bombs and the
+list, so a fired burst gets the smoke plume, the shockwave, the shake, the bombs and the
 lake splash, exactly like a scheduled big burst. Pressing `E` while paused starts the burst when you unpause.
 `--fire <t>` does the same from the command line.
 
 ### 13.6 Verified (2026-10-09)
 
-- Rendered a fired burst at 0.5, 1.6, 3.2 and 6 s: the shockwave rings, the orange-fronted pyroclastic flows
-  rolling down and across the plain, the plume and the bombs' trails. Four rings were confirmed drawn at the
+- Rendered a fired burst at 0.5, 1.6, 3.2 and 6 s: the shockwave rings, the plume and the bombs' trails (the
+  pyroclastic flows that were also drawn here have since been removed, §13.1). Four rings were confirmed drawn at the
   expected radii (41, 56, 67 and 82 at one moment) by logging them.
 - Rendered the lake around the impact: a bomb with its trail falling in, then ripples, spray droplets and steam
   at both impacts (the first version's steam was far too big and solid, and was tuned down).
@@ -1335,3 +1332,174 @@ lake splash, exactly like a scheduled big burst. Pressing `E` while paused start
 Ordinary lava droplets and rock chunks never reach the lake (they land within about 60 units), so only the lake
 bombs splash. Ripples on the lake from the boat's wake and from the helicopter's downwash, a ground
 crater where a bomb lands, and burning the trees the flows pass over are all unbuilt.
+
+
+---
+
+## 14. Lava pool and draw order (fixes, 2026-10-11)
+
+Two things were reported from a run: *"a constant orange circle on the ground of lava, inconsistent"* and
+*"from above the clouds the helicopter and the ground rover are seen, which is not realistic"*. Both were real bugs.
+
+### 14.1 The lava pool is now a basin that the sheet flow pours into
+
+**What was wrong.** The pool was a single flat orange disc at a fixed spot `(-44, 0.1, 6)` with no flow leading to
+it, present from the first frame and only growing slowly. Nothing moved on it, and it fed nothing.
+
+**What it is now** (`drawLavaPool`):
+
+| Part | Behaviour |
+|---|---|
+| Position | The end of the **broad sheet flow** (the last `LavaFlowStyle`, azimuth 322°) plus 4.5 units outward: about `(52, 0.1, -41)`. The flow runs straight into it |
+| Arrival | It does not exist until the flow reaches it. It fills as `R = 7.5 · smoothstep(t_a − 3, t_a + 22, t)`, where `t_a = (1 − 0.25) / growSpeed` is when the flow's advance reaches 1 (about 25 s). The sheet flow's `growSpeed` went from 0.020 to 0.030 so it arrives sooner |
+| Cooled crust | The whole disc, dark red, lightly emissive |
+| Molten core | 82% of the radius, bright orange. It flickers (`sin(2.1 t) · sin(0.7 t + 1)`) and its radius breathes by 3% |
+| Inflow glow | A hot patch on the side facing the volcano, half way out, that pulses with the same travelling wave as the flow |
+| Crust plates | Ten dark matte slabs carried round by the circulation (`angle += 0.16 · (1.15 − r/R) · t`, faster in the middle), each growing, breaking up and re-forming (`0.6 + 0.4 sin(0.35 t + phase)`) |
+
+The crust and the core are still the `poolDisc` mesh, so `+` and `−` change their tessellation and the
+Gouraud-vs-Phong highlight demo (Demo A, §9.2) still works on it. **Demo A's camera position changed** with the pool: the
+glint is at the sun's mirror point on the pool at about `(52, 0.1, -41)`.
+
+Two smaller changes in the same fix: the travelling brightness pulse along every flow is more visible
+(amplitude 0.10 → 0.22), and the lobes at the end of a flow now breathe by ±7% so a flow front keeps moving.
+
+### 14.2 Draw order: nothing solid shows through the cloud layer
+
+**What was wrong.** The 80 storm-cloud puffs at `y ≈ 62` were drawn *before* the vehicles. Translucent puffs do
+not write depth, so a rover or helicopter drawn afterwards was painted over them, and looking down from above the
+layer (a free camera orbits as high as 300 units) you saw the rover and the helicopter through a solid deck of cloud.
+
+**What it is now** (`renderScene`):
+
+1. **Opaque pass:** the sky dome, terrain, volcano, crater, rim rocks, pool, lava flows, droplets, rock chunks, trees, hut,
+   windmill, helipad and every vehicle. Everything here writes depth.
+2. **Translucent pass, back to front, no depth writes.** Which end of the pass the storm layer sits at depends on the
+   camera: it is the *farthest* thing for a camera below it (drawn first) and the *nearest* for a camera above it
+   (drawn last). So below `y = 62` the order is storm clouds, lightning, then the eruption's effects, ash puffs, smoke
+   plume and ash umbrella; above it, the reverse. Every vehicle is already in the depth buffer, so a vehicle under the
+   layer is correctly covered by it.
+3. The cloud puffs are also a little more opaque (`0.88 → 0.95` alpha), so one puff hides what is behind it (a deck of
+   several puffs hides it completely).
+
+### 14.3 Verified (2026-10-11)
+
+- *Lava pool:* rendered at 14, 26, 40 and 80 s. At 14 s only the flow's tip has reached the basin and the pool does not
+  exist; at 26 s the pool has just begun to fill; at 40 s it is a full pool with a hot core, a glowing inflow patch and
+  dark crust plates; at 80 s the flow still feeds it. By night the crust plates and edge read clearly.
+  **Not seen live:** the plates' drift and the core's flicker. Those come from still frames and the formulas.
+- *Clouds:* the same top-down frame (camera at 140 units, pitch 80°) rendered with the old and new builds: **82 yellow
+  rover pixels before, 0 after**; the helicopter is a faint shadow under the deck instead of a clear object.
+- Self-test passes, no GL errors in five configurations (Gouraud with ray tracing and lava-light tracing, Flat with shadows,
+  the rover camera, a fired burst, Blinn at low tessellation), 205 FPS at 915 draw calls by day.
+- *Still faintly visible:* with the camera right above the layer a vehicle can show as a faint grey ghost through one thin
+  patch of cloud. That is a translucent layer behaving as it should, not a draw-order bug.
+
+### 14.4 Not done
+
+The pool does not receive photons from the lava-light tracing as a separate emitter (the flow samples cover its
+inflow), the drifting crust plates are not in the ray-tracing proxy scene so they cast no shadow, and the other four
+flows still just end at a point. (The long river ends in a lobed front and the others taper.)
+
+
+---
+
+## 15. Driving keys moved off the letters (2026-10-11)
+
+`S` was hard to type, so **no letter key is used to drive any more**. The arrow keys drive whichever object `Tab`
+selected (`↑` forward, `↓` back, `←` / `→` turn), and `Space` / `Left Shift` still climb and descend. Because
+the arrows used to orbit the camera, orbiting moved:
+
+| Camera orbit | When |
+|---|---|
+| Arrow keys | Only while **nothing** is controlled (as before) |
+| `Z` / `X` (yaw) and `Home` / `End` (pitch) | Always |
+| Left mouse button dragged (0.25° per pixel) | Always. It needs no cursor capture |
+
+The old `W`, `A`, `S` and `D` do nothing now. Nothing else in the program used them.
+
+### 15.1 Verified with real key presses
+
+Earlier rounds could only test input through command-line options. This time key presses were injected into the
+running window (focus confirmed, `--bench` printing the controlled object's final position and the camera angles):
+
+| Input | Result |
+|---|---|
+| no key | rover stays at (-28, -2) |
+| `↓` held 4 s | rover reversed to x = -44 |
+| `↑` held 4 s | rover drove toward the volcano and stopped at its 22-unit keep-out radius |
+| `S` or `W` held | no movement |
+| `←` held while stationary | no change (the rover only steers while moving) |
+| `X` held 1.5 s | camera yaw 35° → 125° |
+| `Home` held 1 s | camera pitch 10° → 71° |
+| `↑` with nothing controlled | camera pitch changes (the arrows still orbit) |
+| Left mouse drag | camera yaw and pitch change |
+
+**Not verified:** the mouse sensitivity. Windows display scaling rescaled the injected cursor positions, so the
+size of the response to a drag could not be checked. The letter-key handlers (`Tab`, `E`, `N`, ...) were not
+re-tested this round; they were not changed.
+
+
+---
+
+## 16. The rover collides and bumps (2026-10-11)
+
+**Reported:** the rover drove straight through rocks, trees and everything else. Nothing in the scene had a
+collision shape; the only limit was a silent radius clamp around the volcano.
+
+### 16.1 Obstacles
+
+Every obstacle is a **circle on the ground** (`Collider.h`: x, z, radius, kind). The rover is a circle of radius 1.5
+(its body is 1.7 wide and 3.0 long), so a collision test is one distance comparison. The shapes are built from the same
+numbers as the draw code, so a collider is always where its object is drawn:
+
+| Obstacle | Shape |
+|---|---|
+| Burnt trees (6) | trunk circle `0.4 × scale`, plus two debris rocks at the foot (the same hash as `drawBurntTree`) |
+| Burnt hut | three overlapping circles of radius 1.3 along its width, rotated with the hut, plus its three debris rocks |
+| Windmill | its stone footing, radius 0.85 |
+| Healthy forest (about 85 trees) | `0.9 × scale` each. The placement code was pulled out of `drawTerrain` into one helper, so a tree that is drawn is also solid |
+| Rocks | every rock chunk that has **landed** and is resting on the ground (they last 4 s), radius `0.8 × size` |
+| Helicopter | a circle of radius 2.0 while it is parked (`y < 1`); a flying one passes overhead |
+| Volcano | its footprint (radius 19.5). This replaces the old silent clamp at radius 22 |
+| Lake | an ellipse 31 × 21 around the water; the rover cannot drive into it |
+| World edge | radius 150 |
+
+Not obstacles: lava (the rover drives over it), the helipad (flat), hills and mountains (too gentle or too far), the
+rim rocks and the other drones.
+
+### 16.2 What happens on a hit (`Rover::update`)
+
+1. **Resolve:** the rover is pushed straight out of the overlap along the contact normal.
+2. **Reflect:** `v' = v − (1 + e)(v·n)n` with a restitution `e = 0.35`, then only the part along the heading is kept (a
+   rover cannot slide sideways). A head-on hit at speed *v* sends it back at 0.35 *v*; a glancing hit slides it along
+   the obstacle.
+3. **Bump** (only if the impact speed is at least 1.2 units/s and 0.25 s has passed since the last bump, so pressing
+   against an obstacle does not retrigger):
+   - the nose **swings away** from a glancing blow (a yaw kick);
+   - **three damped springs** (`x'' = −kx − cx'`) react to the impact speed: a **nose dive** on a head-on hit (a lift if
+     hit from behind), a **roll**, and a **hop**;
+   - a **camera jolt** is added to the eruption shake, but only while you are driving the rover or looking through
+     its camera;
+   - the HUD shows `BUMPS n (WINDMILL)` for 3 s.
+
+### 16.3 Verified (2026-10-11)
+
+| Test | Result |
+|---|---|
+| Real `↑` key held, rover facing the windmill | stopped at x = −42.2 (the footing's contact point is −42.25) after an impact of 7.9 units/s |
+| Real `↑` held toward the hut | stopped against the debris rock in front of it, bump `ROCK` |
+| Real `↑` held on open ground | no bump |
+| Physics alone, head-on at 7.9 units/s | reversed at 2.76 units/s, nose dive 0.21 rad (12°), hop 0.21 units, shake 1.1, settled in 0.5 s |
+| Physics alone, glancing | the nose swung away (yaw 1.571 → 1.474) and the rover slid clear |
+| Toward the lake and the volcano | stopped at the shore (x = −94) and at the cone's footprint (x = −21), one bump each |
+| Self-test and GL errors | pass |
+
+**Not verified:** how the bump *looks* in motion. The checks above are numbers and a few still frames in which the
+camera follows the rover, so the dive and hop are hard to see. Judge that live.
+
+### 16.4 Not done
+
+The other vehicles do not collide (the drone and helicopter fly; the boat is held inside the lake by a clamp, not a
+bump), and the rover's rock/tree obstacles are circles, so a corner of the hut can still be driven into slightly. Sounds,
+dust on impact and driving through lava are not built.

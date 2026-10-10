@@ -69,7 +69,7 @@ const Vec3 kCraterPos(0.0f, kVolcanoHeight * 0.93f, 0.0f);
 // The crater point light hovers above the vent (the glow of the lava fountain). Placed exactly at
 // the vent it would sit on the cone's tangent plane and light none of the steep slopes.
 const Vec3 kCraterLightPos = kCraterPos + Vec3(0.0f, 6.0f, 0.0f);
-const Vec3 kPoolPos(-44.0f, 0.1f, 6.0f); // a lava pool on the open plain, clear of every flow, tree and the hut
+// (The lava pool has no fixed position: it sits at the end of the broad sheet flow, see poolPos() below.)
 const float kStormBaseY = 62.0f; // storm clouds (and thunder) live in the sky, not on the volcano
 const Vec3 kWindDir = normalize3(Vec3(1.0f, 0.0f, 0.35f)); // shared by ash cloud and storm clouds
 const float kTreeLeanDeg = -10.0f; // burnt trees lean away from the wind
@@ -176,9 +176,52 @@ const std::vector<Scene::LavaFlowStyle>& flowStyles() {
         for (int i = 0; i < 3; ++i)
             styles.push_back({ 72.0f + 26.0f * i, 48.0f + 16.0f * hashNoise(i * 3 + 1), 0.5f, 0.05f, 0.10f, 11.0f + i, float(i), 0.85f, 0.30f, 0.04f, false, 0.05f });
         // 3) Broad, slow sheet flow: wide, dark-crusted, with a bright lobed front.
-        styles.push_back({ 322.0f, 62.0f, 3.0f, 5.5f, 0.05f, 4.0f, 2.0f, 0.62f, 0.14f, 0.03f, true, 0.020f });
+        styles.push_back({ 322.0f, 62.0f, 3.0f, 5.5f, 0.05f, 4.0f, 2.0f, 0.62f, 0.14f, 0.03f, true, 0.030f });
     }
     return styles;
+}
+
+// The lava pool is the basin at the end of the broad sheet flow (the last flow style): the flow pours into it,
+// and it only fills once the flow has arrived. (A free-standing pool with no flow leading to it looked like a
+// flat orange disc painted on the ground.)
+Vec3 poolPos() {
+    const Scene::LavaFlowStyle& st = flowStyles().back();
+    Vec3 e = Scene::lavaFlowEnd(st, kVolcanoBaseRadius, kVolcanoHeight);
+    Vec3 out = normalize3(Vec3(e.x, 0.0f, e.z));
+    return Vec3(e.x, 0.1f, e.z) + out * 4.5f;
+}
+float poolArrivalTime() { return (1.0f - 0.25f) / flowStyles().back().growSpeed; }   // when grow reaches 1
+Vec3 poolInflowDir() {
+    Vec3 p = poolPos();
+    return normalize3(Vec3(-p.x, 0.0f, -p.z));       // toward the volcano, where the flow comes from
+}
+
+// ---------------------------------------------------------------- what the rover can bump into
+// The solid things built from the scene's own placement data (so an obstacle is always where it is drawn):
+// the burnt trees and their debris, the hut and its debris, the windmill, the healthy forest. These never move,
+// so they are built once. Rocks that have landed and the helicopter while it is parked are added each frame.
+const std::vector<Collider>& staticObstacles() {
+    static std::vector<Collider> v;
+    if (v.empty()) {
+        for (const auto& tp : kTrees) {
+            Vec3 pos(tp.radius * std::cos(radians(tp.angleDeg)), 0.0f, tp.radius * std::sin(radians(tp.angleDeg)));
+            Scene::burntTreeColliders(pos, tp.scale, tp.seed, v);
+        }
+        Scene::burntHutColliders(kHutPos, 205.0f + 90.0f, v);
+        Scene::windmillColliders(kWindmillPos, v);
+        Scene::forestTreeColliders(v);
+    }
+    return v;
+}
+
+std::vector<Collider> roverObstacles() {
+    std::vector<Collider> v = staticObstacles();
+    Scene::landedRockColliders(v);
+    if (g.heli.pos.y < 1.0f) {            // a parked helicopter is a solid object; a flying one passes overhead
+        Collider c; c.x = g.heli.pos.x; c.z = g.heli.pos.z; c.r = 2.0f; c.kind = KindHelicopter;
+        v.push_back(c);
+    }
+    return v;
 }
 
 // ---------------------------------------------------------------- per-frame view
@@ -385,6 +428,11 @@ void renderScene(const Shader& shader, const Scene::MeshLibrary& meshes, const F
         shader.setFloat("uRefl", refl);   // reflectivity (lava 0.12; the lake sets its own in drawTerrain)
     };
 
+    // ---- Opaque pass ----
+    // Everything solid is drawn first and writes depth. The translucent things (the cloud layer, the smoke,
+    // the eruption's rings and flows) come AFTER, back to front, blended over the scene without writing depth.
+    // (An earlier version drew the cloud layer before the solid vehicles, so a helicopter or rover painted
+    // itself on top of the clouds when seen from above.)
     material(Scene::MatUnlit);
     Scene::drawSky(shader, meshes, f.eye, sky, f.flash);
 
@@ -402,10 +450,10 @@ void renderScene(const Shader& shader, const Scene::MeshLibrary& meshes, const F
     Scene::setTexture(shader, Scene::TexRock, 2.0f, 2.0f);
     Scene::drawCraterRimRocks(shader, meshes, kCraterPos, 3.1f, 12, kVolcanoBaseRadius, kVolcanoHeight);
 
-    // The lava pool at the foot of the river, and five lava flows, each in its own style.
+    // The five lava flows, each in its own style, and the pool the broad sheet flow pours into.
     Scene::setTexture(shader, Scene::TexNone);
     material(Scene::MatLava, 0.6f, 0.12f);
-    Scene::drawLavaPool(shader, meshes, kPoolPos, f.t);
+    Scene::drawLavaPool(shader, meshes, poolPos(), f.t, poolArrivalTime(), poolInflowDir());
     material(Scene::MatLava, 0.75f, 0.12f);
     const float vr = kVolcanoBaseRadius, vh = kVolcanoHeight;
     for (const auto& st : flowStyles()) Scene::drawLavaFlow(shader, meshes, kCraterPos, vr, vh, st, f.t);
@@ -416,10 +464,6 @@ void renderScene(const Shader& shader, const Scene::MeshLibrary& meshes, const F
     Scene::setTexture(shader, Scene::TexRock, 2.0f, 2.0f);
     Scene::updateAndDrawRockChunks(shader, meshes, kCraterPos, vr, vh, f.t);
     Scene::setTexture(shader, Scene::TexNone);
-    material(Scene::MatAsh);
-    Scene::updateAndDrawAshPuffs(shader, meshes, kCraterPos, f.t);
-    Scene::drawEruptionSmoke(shader, meshes, kCraterPos, kWindDir, f.t);   // the burst plumes
-    Scene::drawEruptionEffects(shader, meshes, kCraterPos, vr, vh, f.t);   // shockwave, pyroclastic flows, lake bombs
 
     // ---- Aftermath and monitoring objects ----
     material(Scene::MatMatte);
@@ -433,16 +477,8 @@ void renderScene(const Shader& shader, const Scene::MeshLibrary& meshes, const F
     Scene::setTexture(shader, Scene::TexNone);
     Scene::drawHelipad(shader, meshes, kHelipadPos);
 
-    material(Scene::MatAsh);
-    Scene::drawAshCloud(shader, meshes, kCraterPos, kWindDir, f.t);
-
-    material(Scene::MatUnlit);
-    Scene::drawStormClouds(shader, meshes, kStormBaseY, kWindDir, f.t, f.flash, sky.daylight);
-    if (sky.daylight < kNoLightningDaylight)
-        Scene::drawVolcanicLightning(shader, meshes, Vec3(0.0f, kStormBaseY, 0.0f), f.t);
-
-    // Two autonomous drones circling the volcano and the pilot drone. The drone
-    // we are looking through is skipped so the camera isn't inside its own body.
+    // Two autonomous drones circling the volcano, the pilot drone, and the rover, helicopter and boat. The
+    // vehicle we are looking through is skipped so the camera isn't inside its own body.
     material(Scene::MatMatte);
     for (int i = 0; i < kOrbitDrones; ++i) {
         if (f.hiddenDrone == i) continue;
@@ -453,14 +489,39 @@ void renderScene(const Shader& shader, const Scene::MeshLibrary& meshes, const F
         DroneKin k = pilotDrone(f.t);
         Scene::drawResearchDrone(shader, meshes, k.pos, k.drawTime, k.yaw, g.pilot.pitchVis, g.pilot.rollVis);
     }
-
-    // The other three controllable objects: rover, helicopter and boat.
     if (f.hiddenDrone != kRoverIndex)
-        Scene::drawRover(shader, meshes, g.rover.pos, g.rover.yaw, g.rover.rollVis, g.rover.wheelAngle);
+        Scene::drawRover(shader, meshes, g.rover.pos + Vec3(0.0f, g.rover.hop, 0.0f), g.rover.yaw, g.rover.rollVis,
+                         g.rover.wheelAngle, g.rover.pitchVis);
     if (f.hiddenDrone != kHeliIndex)
         Scene::drawHelicopter(shader, meshes, g.heli.pos, g.heli.yaw, g.heli.pitchVis, g.heli.rollVis, g.heli.rotorAngle);
     if (f.hiddenDrone != kBoatIndex)
         Scene::drawBoat(shader, meshes, g.boat.pos, g.boat.yaw, g.boat.speed, f.t);
+
+    // ---- Translucent pass, back to front ----
+    // The storm layer sits at kStormBaseY. A camera above it sees the layer as the NEAREST translucent thing
+    // (everything else is below it), so it is drawn last; a camera below it sees the layer as the farthest,
+    // so it is drawn first. Everything solid is already in the depth buffer, so a vehicle under the cloud
+    // layer is correctly covered by it.
+    auto drawStorm = [&]() {
+        material(Scene::MatUnlit);
+        Scene::drawStormClouds(shader, meshes, kStormBaseY, kWindDir, f.t, f.flash, sky.daylight);
+    };
+    auto drawBolts = [&]() {
+        material(Scene::MatUnlit);
+        if (sky.daylight < kNoLightningDaylight)
+            Scene::drawVolcanicLightning(shader, meshes, Vec3(0.0f, kStormBaseY, 0.0f), f.t);
+    };
+    auto drawSmokeAndEffects = [&]() {
+        material(Scene::MatAsh);
+        Scene::drawEruptionEffects(shader, meshes, kCraterPos, vr, f.t);       // shockwave rings, lake bombs
+        material(Scene::MatAsh);
+        Scene::updateAndDrawAshPuffs(shader, meshes, kCraterPos, f.t);
+        Scene::drawEruptionSmoke(shader, meshes, kCraterPos, kWindDir, f.t);   // the burst plumes
+        material(Scene::MatAsh);
+        Scene::drawAshCloud(shader, meshes, kCraterPos, kWindDir, f.t);
+    };
+    if (f.eye.y > kStormBaseY) { drawSmokeAndEffects(); drawBolts(); drawStorm(); }
+    else                       { drawStorm(); drawBolts(); drawSmokeAndEffects(); }
 }
 
 // ---------------------------------------------------------------- input
@@ -533,6 +594,25 @@ void scrollCallback(GLFWwindow*, double, double yoff) {
     g.orbit.zoom(static_cast<float>(-yoff) * 3.0f);
 }
 
+// Dragging with the left mouse button orbits the camera (it needs no cursor capture). It is how you turn the
+// view while the arrow keys are driving an object.
+struct MouseDrag { bool down = false; double x = 0.0, y = 0.0; };
+MouseDrag g_drag;
+
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int) {
+    if (button != GLFW_MOUSE_BUTTON_LEFT) return;
+    g_drag.down = (action == GLFW_PRESS);
+    if (g_drag.down) glfwGetCursorPos(window, &g_drag.x, &g_drag.y);
+}
+
+void cursorPosCallback(GLFWwindow*, double x, double y) {
+    if (g_drag.down) {
+        g.orbit.orbit(static_cast<float>(x - g_drag.x) * 0.25f, static_cast<float>(y - g_drag.y) * 0.25f);
+    }
+    g_drag.x = x;
+    g_drag.y = y;
+}
+
 void framebufferSizeCallback(GLFWwindow*, int width, int height) {
     g.width = width;
     g.height = height;
@@ -543,10 +623,11 @@ PilotInput readPilotInput(GLFWwindow* window) {
     PilotInput in;
     if (g.autopilot) { in.fwd = 1.0f; in.turn = 0.6f; in.vert = 0.2f; return in; }
     auto down = [&](int k) { return glfwGetKey(window, k) == GLFW_PRESS; };
-    if (down(GLFW_KEY_W)) in.fwd += 1.0f;
-    if (down(GLFW_KEY_S)) in.fwd -= 1.0f;
-    if (down(GLFW_KEY_A)) in.turn += 1.0f;   // +yaw turns left
-    if (down(GLFW_KEY_D)) in.turn -= 1.0f;
+    // Driving uses the arrow keys (no letters, so it works if a letter key is awkward to type).
+    if (down(GLFW_KEY_UP))    in.fwd += 1.0f;
+    if (down(GLFW_KEY_DOWN))  in.fwd -= 1.0f;
+    if (down(GLFW_KEY_LEFT))  in.turn += 1.0f;   // +yaw turns left
+    if (down(GLFW_KEY_RIGHT)) in.turn -= 1.0f;
     if (down(GLFW_KEY_SPACE)) in.vert += 1.0f;
     if (down(GLFW_KEY_LEFT_SHIFT)) in.vert -= 1.0f;
     return in;
@@ -559,10 +640,19 @@ void processHeldKeys(GLFWwindow* window, float dt) {
     float orbitSpeed = 60.0f * dt;   // degrees/second
     float zoomSpeed = 20.0f * dt;    // units/second
 
-    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  g.orbit.orbit(-orbitSpeed, 0.0f);
-    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) g.orbit.orbit(orbitSpeed, 0.0f);
-    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    g.orbit.orbit(0.0f, orbitSpeed);
-    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  g.orbit.orbit(0.0f, -orbitSpeed);
+    auto down = [&](int k) { return glfwGetKey(window, k) == GLFW_PRESS; };
+    // Orbit: the arrow keys while nothing is controlled (while an object is controlled they drive it),
+    // Z / X (yaw) and Home / End (pitch) at any time, and the left mouse button dragged.
+    if (g.ctl == CtlNone) {
+        if (down(GLFW_KEY_LEFT))  g.orbit.orbit(-orbitSpeed, 0.0f);
+        if (down(GLFW_KEY_RIGHT)) g.orbit.orbit(orbitSpeed, 0.0f);
+        if (down(GLFW_KEY_UP))    g.orbit.orbit(0.0f, orbitSpeed);
+        if (down(GLFW_KEY_DOWN))  g.orbit.orbit(0.0f, -orbitSpeed);
+    }
+    if (down(GLFW_KEY_Z))    g.orbit.orbit(-orbitSpeed, 0.0f);
+    if (down(GLFW_KEY_X))    g.orbit.orbit(orbitSpeed, 0.0f);
+    if (down(GLFW_KEY_HOME)) g.orbit.orbit(0.0f, orbitSpeed);
+    if (down(GLFW_KEY_END))  g.orbit.orbit(0.0f, -orbitSpeed);
     // Zoom: PgUp/PgDn and the mouse wheel. (+/- now change the tessellation.)
     if (glfwGetKey(window, GLFW_KEY_PAGE_UP) == GLFW_PRESS)   g.orbit.zoom(-zoomSpeed);
     if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) == GLFW_PRESS) g.orbit.zoom(zoomSpeed);
@@ -612,7 +702,11 @@ void drawHud(Hud& hud, const Frame& f, const Scene::MeshLibrary& meshes, const P
         std::string t = fmt("CONTROL: %s", controlName(g.ctl));
         switch (g.ctl) {
             case CtlDrone: t += fmt("  ALT %.0f  SPD %.0f", g.pilot.pos.y, std::fabs(g.pilot.speed)); break;
-            case CtlRover: t += fmt("  SPD %.1f", g.rover.speed); break;
+            case CtlRover:
+                t += fmt("  SPD %.1f", g.rover.speed);
+                if (g.rover.hits > 0)
+                    t += fmt("  BUMPS %d", g.rover.hits) + (g.rover.sinceHit < 3.0f ? std::string(" (") + colliderName(g.rover.lastKind) + ")" : std::string());
+                break;
             case CtlHeli:  t += fmt("  ALT %.0f  SPD %.0f  ROTOR %d%%", g.heli.pos.y, std::fabs(g.heli.speed), (int)(100.0f * g.heli.rotorSpeed / 30.0f)); break;
             case CtlBoat:  t += fmt("  SPD %.1f", g.boat.speed); break;
             default: break;
@@ -635,7 +729,7 @@ void drawHud(Hud& hud, const Frame& f, const Scene::MeshLibrary& meshes, const P
         y += lineH;
     }
     const char* legend1 = "[1-3] SHADE [L] LIGHT [K] TERMS [B] BLINN [T] TEX [R] RAYS [F] LAVA LIGHT [M] MAP [N] TIME [H] HUD";
-    const char* legend2 = "[E] ERUPT [J] SHAKE [C/V] CAMERA [TAB] CONTROL [WASD SPACE SHIFT] DRIVE/FLY [P] PAUSE";
+    const char* legend2 = "[E] ERUPT [J] SHAKE [C/V] CAM [TAB] CONTROL [ARROWS SPACE SHIFT] DRIVE/FLY [Z X HOME END / MOUSE] VIEW [P] PAUSE";
     float lw = std::max(Hud::textWidth(legend1, 11.0f), Hud::textWidth(legend2, 11.0f));
     hud.panel(6.0f, g.height - 42.0f, lw + 12.0f, 36.0f, 0.0f, 0.0f, 0.0f, 0.5f);
     hud.text(12.0f, g.height - 39.0f, legend1, 11.0f, 0.85f, 0.85f, 0.85f, 1.0f);
@@ -775,6 +869,8 @@ int main(int argc, char** argv) {
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetScrollCallback(window, scrollCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
     if (benchSeconds > 0.0f) glfwSwapInterval(0);   // measure the real cost, not the monitor refresh
 
     glewExperimental = GL_TRUE;
@@ -862,7 +958,7 @@ int main(int argc, char** argv) {
         g.pilot.update(simDt, g.ctl == CtlDrone ? in : none, [](float x, float z) {
             return std::max(2.5f, Scene::terrainHeightAt(x, z, kVolcanoBaseRadius, kVolcanoHeight) + 3.0f);
         });
-        g.rover.update(simDt, g.ctl == CtlRover ? in : none);
+        g.rover.update(simDt, g.ctl == CtlRover ? in : none, roverObstacles());
         g.heli.update(simDt, g.ctl == CtlHeli ? in : none, g.ctl == CtlHeli, [](float x, float z) {
             return Scene::terrainHeightAt(x, z, kVolcanoBaseRadius, kVolcanoHeight);
         });
@@ -879,7 +975,9 @@ int main(int argc, char** argv) {
         // Camera shake: a jolt at the start of every burst that dies away in about a second. A small rotation
         // applied to the view (the eye does not move, so distances and the HUD are unaffected).
         if (g.shake) {
-            float a = 0.011f * Eruption::shake(f.t);
+            // A bump of the rover jolts the view too, but only when you are driving it or looking through it.
+            float bump = (g.ctl == CtlRover || g.camMode == CamRover) ? 0.9f * g.rover.bumpShake : 0.0f;
+            float a = 0.011f * (Eruption::shake(f.t) + bump);
             if (a > 1e-5f) {
                 float tt = f.t;
                 f.view = Mat4::rotateX(a * std::sin(63.0f * tt)) * Mat4::rotateY(a * std::sin(79.0f * tt + 1.1f))
@@ -911,6 +1009,12 @@ int main(int argc, char** argv) {
             if (now >= benchSeconds) {
                 std::cout << "bench: " << frameNo << " frames in " << now << " s = " << frameNo / now
                           << " FPS, avg draw calls " << benchDrawCalls / frameNo << std::endl;
+                // Where the controlled object ended up and how the camera is oriented: lets a test confirm that
+                // real key presses reached the program.
+                Vec3 cp = g.ctl == CtlRover ? g.rover.pos : g.ctl == CtlHeli ? g.heli.pos : g.ctl == CtlBoat ? g.boat.pos : g.pilot.pos;
+                std::cout << "final: control " << g.ctl << " pos " << cp.x << " " << cp.y << " " << cp.z
+                          << " | rover bumps " << g.rover.hits << " last " << colliderName(g.rover.lastKind) << " impact " << g.rover.lastImpact
+                          << " | camera yaw " << g.orbit.yawDeg << " pitch " << g.orbit.pitchDeg << std::endl;
                 break;
             }
         }

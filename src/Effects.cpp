@@ -1,13 +1,11 @@
 // Effects.cpp -- the effects that accompany an eruption burst (see Eruption.h):
 //   * the shockwave: expanding rings racing out across the ground from the foot of the volcano;
-//   * pyroclastic flows: dark, fast, ground-hugging clouds that roll down the slopes and out
-//     across the plain after a BIG burst;
 //   * lake bombs: after a big burst a salvo of long-range volcanic bombs, with glowing trails,
 //     is thrown toward the lake (about 140 units away, beyond the reach of ordinary ejecta),
 //     and each one lands with a splash, ripples, a spray of droplets and a puff of steam.
 //
 // Everything is a closed-form function of time and of the burst start times, so nothing is
-// stored. Flat colours only; the rings, ripples, spray and steam are unlit, the flows are lit ash.
+// stored. Flat colours only; the rings, ripples, spray and steam are unlit.
 #include "SceneObjects.h"
 #include "Eruption.h"
 #include <algorithm>
@@ -38,43 +36,6 @@ static void drawShockwave(const Shader& sh, const MeshLibrary& lib, float baseRa
         put(sh, lib.ring, Mat4::translate(Vec3(0.0f, 0.22f, 0.0f)) * Mat4::scale(Vec3(radius, 1.0f, radius)),
             1.0f, 0.88f, 0.66f, alpha);
     }
-}
-
-// ---------------------------------------------------------------- pyroclastic flows
-// Four lobes per big burst, each a train of dark billowing puffs behind a front that races down the
-// cone (about 30 units/s at first) and slows as it spreads across the plain:
-//   front(tau) = 95 * (1 - exp(-tau / 3.2))      distance travelled from the rim
-static void drawPyroclastic(const Shader& sh, const MeshLibrary& lib, float baseR, float height, const Eruption::Burst& b, float time) {
-    const float tau = time - b.start - 0.8f;
-    if (tau < 0.0f || tau > 14.0f) return;
-    const float rim = 0.14f * baseR + 0.1f;
-    const float front = 95.0f * (1.0f - std::exp(-tau / 3.2f));
-    const float fadeIn = std::min(1.0f, tau / 0.6f);
-    const float fadeOut = std::max(0.0f, std::min(1.0f, (14.0f - tau) / 6.0f));
-    const float heat = std::exp(-tau / 1.4f);                      // glowing at first, dark soon after
-
-    sh.setInt("uMat", MatAsh);
-    for (int lobe = 0; lobe < 4; ++lobe) {
-        float az = 6.2831853f * rnd(b.id * 53 + lobe * 7 + 1);
-        for (int row = 0; row < 14; ++row) {
-            float back = row * 2.4f * (1.0f + 0.05f * tau);
-            float r = rim + front - back;
-            if (r < rim) continue;
-            for (int across = -1; across <= 1; ++across) {
-                int seed = b.id * 977 + lobe * 131 + row * 17 + (across + 2) * 5;
-                float ang = az + across * (2.2f + 0.10f * r) / r;
-                float x = r * std::cos(ang), z = r * std::sin(ang);
-                float radius = (2.0f + 0.04f * r + 1.2f * rnd(seed)) * (0.7f + 0.3f * std::min(1.0f, tau / 2.0f));
-                float y = terrainHeightAt(x, z, baseR, height) + radius * 0.6f + 0.4f * std::sin(time * 2.3f + seed);
-                float h = row < 5 ? heat : 0.0f;
-                float alpha = 0.7f * fadeIn * fadeOut * (0.55f + 0.45f * (1.0f - row / 14.0f));
-                sh.setFloat("uEmit", 0.5f * h);
-                put(sh, lib.sphere, Mat4::translate(Vec3(x, y, z)) * Mat4::scale(Vec3(radius, radius * 0.75f, radius)),
-                    0.13f + 0.5f * h, 0.105f + 0.15f * h, 0.09f, alpha);
-            }
-        }
-    }
-    sh.setFloat("uEmit", 0.0f);
 }
 
 // ---------------------------------------------------------------- splash
@@ -167,7 +128,7 @@ static void drawLakeBombs(const Shader& sh, const MeshLibrary& lib, const Vec3& 
 }
 
 // ---------------------------------------------------------------- entry point
-void drawEruptionEffects(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseR, float height, float time) {
+void drawEruptionEffects(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseR, float time) {
     Eruption::Burst bursts[Eruption::kMaxRecent];
     int n = Eruption::recent(time, 20.0f, bursts);
     if (n == 0) return;
@@ -177,10 +138,7 @@ void drawEruptionEffects(const Shader& sh, const MeshLibrary& lib, const Vec3& c
         const Eruption::Burst& b = bursts[i];
         sh.setInt("uMat", MatUnlit);
         drawShockwave(sh, lib, baseR, b, time);
-        if (b.big) {
-            drawPyroclastic(sh, lib, baseR, height, b, time);
-            drawLakeBombs(sh, lib, craterPos, b, time);
-        }
+        if (b.big) drawLakeBombs(sh, lib, craterPos, b, time);
     }
     glDepthMask(GL_TRUE);
     sh.setFloat("uEmit", 0.0f);

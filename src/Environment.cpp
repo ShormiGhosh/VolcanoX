@@ -69,6 +69,26 @@ void drawSky(const Shader& sh, const MeshLibrary& lib, const Vec3& eye, const Sk
     glDepthMask(GL_TRUE);
 }
 
+// Placement of the i-th healthy forest tree, shared by drawTerrain and forestTreeColliders so that a tree
+// that is drawn is also solid. Returns false for the trees that fall on the lake and are skipped.
+static bool forestTreeAt(int i, Vec3& p, float& s) {
+    float ang = radians(360.0f * rnd01(i * 7 + 1));
+    float r = 95.0f + 70.0f * rnd01(i * 7 + 2);
+    p = Vec3(r * std::cos(ang), 0.06f, r * std::sin(ang));
+    if ((p.x + 125.0f) * (p.x + 125.0f) / 1100.0f + (p.z + 70.0f) * (p.z + 70.0f) / 500.0f < 1.0f) return false;   // keep the lake clear
+    s = 0.8f + 0.9f * rnd01(i * 7 + 3);
+    return true;
+}
+
+void forestTreeColliders(std::vector<Collider>& out) {
+    for (int i = 0; i < 90; ++i) {
+        Vec3 p; float s;
+        if (!forestTreeAt(i, p, s)) continue;
+        Collider c; c.x = p.x; c.z = p.z; c.r = 0.9f * s; c.kind = KindForestTree;   // trunk plus the low foliage
+        out.push_back(c);
+    }
+}
+
 // =======================================================================
 // Terrain: wide ground, ash field around the volcano, hills, lake,
 // forest, distant mountains.
@@ -106,12 +126,8 @@ void drawTerrain(const Shader& sh, const MeshLibrary& lib) {
 
     // Healthy forest well outside the ash zone (contrast with the burnt trees).
     for (int i = 0; i < 90; ++i) {
-        float ang = radians(360.0f * rnd01(i * 7 + 1));
-        float r = 95.0f + 70.0f * rnd01(i * 7 + 2);
-        // keep the lake clear
-        Vec3 p(r * std::cos(ang), 0.06f, r * std::sin(ang));
-        if ((p.x + 125.0f) * (p.x + 125.0f) / 1100.0f + (p.z + 70.0f) * (p.z + 70.0f) / 500.0f < 1.0f) continue;
-        float s = 0.8f + 0.9f * rnd01(i * 7 + 3);
+        Vec3 p; float s;
+        if (!forestTreeAt(i, p, s)) continue;      // the same placement the collision shapes use
         float g = 0.07f + 0.05f * rnd01(i * 7 + 4);
         put(sh, lib.cylinder, Mat4::translate(p) * Mat4::scale(Vec3(0.25f * s, 1.6f * s, 0.25f * s)), 0.09f, 0.06f, 0.04f);
         put(sh, lib.cone, Mat4::translate(p + Vec3(0, 1.0f * s, 0)) * Mat4::scale(Vec3(1.7f * s, 3.4f * s, 1.7f * s)), 0.03f, g + 0.05f, 0.04f);
@@ -164,7 +180,7 @@ void drawStormClouds(const Shader& sh, const MeshLibrary& lib, float baseY, cons
             float sz = 12.0f + 10.0f * rnd01(sd * 5 + 5);
             float sy = 3.5f + 2.5f * rnd01(sd * 5 + 4);
             float shade = 0.12f + 0.05f * rnd01(sd) + (layer ? 0.04f : 0.0f) + 0.55f * flash + 0.35f * daylight;
-            put(sh, lib.sphere, Mat4::translate(p) * Mat4::scale(Vec3(sx, sy, sz)), shade, shade * 1.02f, shade * 1.10f, 0.88f * fade);
+            put(sh, lib.sphere, Mat4::translate(p) * Mat4::scale(Vec3(sx, sy, sz)), shade, shade * 1.02f, shade * 1.10f, 0.95f * fade);   // a thick deck: ~5% shows through one puff
         }
     }
     glDepthMask(GL_TRUE);

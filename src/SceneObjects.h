@@ -19,6 +19,7 @@
 #include "Shader.h"
 #include "MathUtils.h"
 #include "DayNight.h"
+#include "Collider.h"
 
 namespace Scene {
 
@@ -73,7 +74,6 @@ void drawVolcano(const Shader& sh, const MeshLibrary& lib, const Vec3& base, flo
 void drawCraterGlowDisc(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float radius, float time);
 void drawCraterRimRocks(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float ringRadius, int count,
                         float baseRadius, float height);
-void drawLavaPool(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float time, float sizeScale = 1.0f);
 void drawLavaFlowChannel(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, const Vec3& poolPos, float baseRadius, float height);
 // One lava flow running from the crater down the cone and out across the ground.
 struct LavaFlowStyle {
@@ -88,6 +88,13 @@ struct LavaFlowStyle {
 };
 void drawLavaFlow(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseRadius, float height,
                   const LavaFlowStyle& style, float time);
+// Where a flow finally ends (its full-length tip, on the ground).
+Vec3 lavaFlowEnd(const LavaFlowStyle& style, float baseRadius, float height);
+// The lava pool that a flow pours into. It does not exist until the flow has arrived (arrivalTime), then
+// fills smoothly. `inflowDir` is the unit vector from the pool toward the incoming flow. The surface is a
+// hot core inside a cooled crust edge, with dark crust plates drifting across it and a glow where the
+// flow enters, so it churns instead of sitting there as a flat disc.
+void drawLavaPool(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float time, float arrivalTime, const Vec3& inflowDir);
 // Points sampled along the advanced part of a lava flow, for the inverse-ray-tracing emitters.
 struct FlowSample {
     Vec3 pos;        // on the flow, just above the surface
@@ -113,9 +120,9 @@ void drawAshCloud(const Shader& sh, const MeshLibrary& lib, const Vec3& centerAb
 // The burst smoke: each eruption burst throws a plume of puffs up from the vent. Closed-form in time.
 // Sets the material/emission itself and leaves the ash material selected.
 void drawEruptionSmoke(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, const Vec3& windDir, float time);
-// The rest of an eruption burst (Effects.cpp): the shockwave rings and, after a big burst, the pyroclastic
-// flows and the long-range bombs thrown at the lake with their splash, ripples and steam.
-void drawEruptionEffects(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseRadius, float height, float time);
+// The rest of an eruption burst (Effects.cpp): the shockwave rings and, after a big burst, the long-range
+// bombs thrown at the lake with their splash, ripples and steam.
+void drawEruptionEffects(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float baseRadius, float time);
 void drawVolcanicLightning(const Shader& sh, const MeshLibrary& lib, const Vec3& cloudCenter, float time);
 // ---- Environment (Environment.cpp) ----
 void drawSky(const Shader& sh, const MeshLibrary& lib, const Vec3& eye, const SkyState& sky, float flash);
@@ -130,7 +137,8 @@ void drawResearchDrone(const Shader& sh, const MeshLibrary& lib, const Vec3& pos
 
 // ---- Controllable vehicles (Controller.h holds their state; main.cpp passes it in) ----
 // All models face +Z and have their origin on the ground (the boat: on the water line).
-void drawRover(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float yawRad, float rollRad, float wheelAngle);
+void drawRover(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float yawRad, float rollRad, float wheelAngle,
+               float pitchRad = 0.0f);
 void drawHelicopter(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float yawRad, float pitchRad, float rollRad,
                     float rotorAngle);
 void drawHelipad(const Shader& sh, const MeshLibrary& lib, const Vec3& pos);
@@ -139,6 +147,14 @@ void drawBoat(const Shader& sh, const MeshLibrary& lib, const Vec3& pos, float y
 // Height of the ground / cone surface under (x, z); used for ballistic landings
 // and for the pilot drone's altitude floor.
 float terrainHeightAt(float x, float z, float baseR, float height);
+
+// ---- Collision shapes for the driven rover (circles on the ground; see Collider.h) ----
+void burntTreeColliders(const Vec3& pos, float scale, int seed, std::vector<Collider>& out);
+void burntHutColliders(const Vec3& pos, float rotationDeg, std::vector<Collider>& out);
+void windmillColliders(const Vec3& pos, std::vector<Collider>& out);
+void forestTreeColliders(std::vector<Collider>& out);
+// Rock chunks that have landed and are resting on the ground (valid after they were drawn this frame).
+void landedRockColliders(std::vector<Collider>& out);
 
 // How many pooled particles were drawn (active) in the last frame, for the HUD.
 int activeLavaDroplets();

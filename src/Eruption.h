@@ -4,7 +4,7 @@
 // an exponential decay (kDecay). Scheduled bursts start every kPeriod seconds, and every third
 // is a big one (30% larger). The viewer can also fire an extra big burst with the E key.
 // Everything that reacts to an eruption (the smoke plume, the vent flash, the crater light, the
-// lava fountain, the shockwave, the pyroclastic flows, the bombs, the camera shake) is a
+// lava fountain, the shockwave, the bombs, the camera shake) is a
 // closed-form function of time and of the list of recent burst start times, so nothing is
 // stored beyond that list and nothing is pre-recorded.
 //
@@ -27,7 +27,7 @@ constexpr float kDecay = 2.2f;    // e-folding time of the decay after the peak
 constexpr int kMaxRecent = 24;
 
 // One burst: when it started, how large it is, a stable id (for hashing), and whether it is
-// a big one (big bursts also send pyroclastic flows down the slopes and bombs toward the lake).
+// a big one (big bursts also throw bombs toward the lake).
 struct Burst {
     float start = 0.0f;
     float amp = 1.0f;
