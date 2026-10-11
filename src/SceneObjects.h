@@ -156,8 +156,5 @@ void forestTreeColliders(std::vector<Collider>& out);
 // Rock chunks that have landed and are resting on the ground (valid after they were drawn this frame).
 void landedRockColliders(std::vector<Collider>& out);
 
-// How many pooled particles were drawn (active) in the last frame, for the HUD.
-int activeLavaDroplets();
-int activeAshPuffs();
 
 } // namespace Scene

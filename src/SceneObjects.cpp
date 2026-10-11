@@ -366,10 +366,9 @@ static void launchBallistic(BallisticSlot& s, const Vec3& craterPos, float time,
     s.landed = false;
 }
 
-static int s_activeDroplets = 0, s_activePuffs = 0;
+static int s_activeDroplets = 0;   // droplets drawn this frame: the emitters for the lava-light tracing
 static std::vector<Collider> s_landedRocks;      // rebuilt by updateAndDrawRockChunks every frame
 void landedRockColliders(std::vector<Collider>& out) { out.insert(out.end(), s_landedRocks.begin(), s_landedRocks.end()); }
-int activeLavaDroplets() { return s_activeDroplets; }
 static const int kDropletPool = 24;   // was 8; bursts spawn droplets several times faster
 static Vec3 s_dropPos[kDropletPool];
 static float s_dropBright[kDropletPool];
@@ -378,7 +377,6 @@ int lavaDropletEmitters(Vec3* pos, float* brightness, int maxCount) {
     for (int i = 0; i < n; ++i) { pos[i] = s_dropPos[i]; brightness[i] = s_dropBright[i]; }
     return n;
 }
-int activeAshPuffs() { return s_activePuffs; }
 
 void updateAndDrawLavaDroplets(const Shader& sh, const MeshLibrary& lib, const Vec3& craterPos, float /*baseR*/, float /*height*/, float time) {
     static const int kCount = kDropletPool;
@@ -516,12 +514,10 @@ void updateAndDrawAshPuffs(const Shader& sh, const MeshLibrary& lib, const Vec3&
     }
 
     const float life = 3.0f;
-    int drawn = 0;
     for (int i = 0; i < kCount; ++i) {
         if (!active[i]) continue;
         float age = time - spawnTimes[i];
         if (age > life) { active[i] = false; continue; }
-        ++drawn;
 
         Vec3 driftX(hashNoise(i * 41 + 9) * 0.6f, 0.0f, hashNoise(i * 43 + 10) * 0.6f);
         Vec3 p = craterPos + Vec3(0, 1.2f, 0) * age + driftX * age;
@@ -531,7 +527,7 @@ void updateAndDrawAshPuffs(const Shader& sh, const MeshLibrary& lib, const Vec3&
         Mat4 model = Mat4::translate(p) * Mat4::scale(grow);
         drawMesh(sh, lib.sphere, model, 0.55f, 0.55f, 0.56f, alpha * 0.85f);
     }
-    s_activePuffs = drawn;
+
 }
 
 } // namespace Scene

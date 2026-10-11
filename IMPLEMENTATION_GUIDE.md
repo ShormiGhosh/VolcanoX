@@ -1503,3 +1503,23 @@ camera follows the rover, so the dive and hop are hard to see. Judge that live.
 The other vehicles do not collide (the drone and helicopter fly; the boat is held inside the lake by a clamp, not a
 bump), and the rover's rock/tree obstacles are circles, so a corner of the hut can still be driven into slightly. Sounds,
 dust on impact and driving through lava are not built.
+
+
+---
+
+## 17. HUD clean-up (2026-10-11)
+
+Removed from the on-screen panel: `ACTIVE DROPLETS`, `ACTIVE ASH PUFFS` and `LAVA RIVER ADVANCE`, together with the
+code that counted active ash puffs and exposed the counts (`activeLavaDroplets`, `activeAshPuffs`).
+
+The `[key]` hints at the end of each panel line were removed in the same change by mistake (they were read as
+"redundant" labels), and **restored the same day** at the user's request. They are back exactly as before, next to the key
+legend along the bottom of the window.
+
+What the panel shows now (top to bottom): shading, lights, terms, specular model, cone segments, textures, ray tracing,
+lava-light tracing, time of day, camera, then the eruption countdown or burst strength, the distance to the crater, the
+controlled object with its speed and (rover) bumps, and the frame rate with the draw-call count.
+
+Note that `s_activeDroplets` stays: the lava-light tracing uses it to know how many droplets to emit photons from.
+Sections of this guide written before this change (for example §9.4's HUD description and the verification notes) may still
+mention the removed lines; this section supersedes them.

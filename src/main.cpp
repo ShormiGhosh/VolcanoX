@@ -694,9 +694,6 @@ void drawHud(Hud& hud, const Frame& f, const Scene::MeshLibrary& meshes, const P
         if (burst > 0.15f) lines.push_back(fmt("ERUPTION: BURST %d%%   [E] FIRE ONE", (int)(100.0f * std::min(1.0f, burst))));
         else               lines.push_back(fmt("ERUPTION: NEXT BURST IN %.1f S   [E] FIRE ONE", Eruption::timeToNext(f.t)));
     }
-    lines.push_back(fmt("ACTIVE DROPLETS:  %d / 24", Scene::activeLavaDroplets()));
-    lines.push_back(fmt("ACTIVE ASH PUFFS: %d / 6", Scene::activeAshPuffs()));
-    lines.push_back(fmt("LAVA RIVER ADVANCE: %d%%", (int)(100.0f * std::min(1.0f, 0.25f + 0.030f * f.t))));
     lines.push_back(fmt("DISTANCE TO CRATER: %.1f M", length3(f.eye - kCraterPos)));
     if (g.ctl != CtlNone) {
         std::string t = fmt("CONTROL: %s", controlName(g.ctl));

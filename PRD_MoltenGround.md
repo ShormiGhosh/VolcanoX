@@ -241,7 +241,7 @@ the shading model. **Ray tracing** (v1.3, stretch tier) is the global-illuminati
 | 2 | OpenGL only | GLFW/GLEW + a hand-written math header only; no engine, no physics lib | Dependency list |
 | 3 | Runs continuously in render loop | All state advances from `glfwGetTime()` each frame | Leave it running 5 min |
 | 4 | Visible motion/animation | Lava fountain, tumbling rock, advancing and pulsing lava flows, pulsing crater, rising ash, orbiting drones, drifting clouds, day/night | Visual |
-| 5 | Clear indications | HUD: time of day, camera, active droplet/ash count, flow advance, shading mode | Screenshot |
+| 5 | Clear indications | HUD: shading mode, lights, terms, time of day, camera, eruption countdown, distance to the crater, controlled object, frame rate | Screenshot |
 | 6a | Translation | Droplet/chunk flight, ash rise, drone orbit, piloted drone | Section 8 |
 | 6b | Rotation | Rock-chunk tumble, ring placement of rim rocks, drone heading and bank | Section 8 |
 | 6c | Scaling | Ash growth-fade, droplet cooling shrink, crater pulse, lava flow advance | Section 8 |
@@ -550,21 +550,24 @@ callback so a tap changes a mode exactly once.
 
 ### HUD Text (top-left, always visible)
 ```
-SHADING: Phong (per-fragment)      [1/2/3]
-LIGHTS:  Crater + Sky light        [L]
+SHADING: Phong (per fragment)      [1/2/3]
+LIGHTS:  Crater + sky light        [L]
 TERMS:   Ambient+Diffuse+Specular  [K]
+SPECULAR: Phong (R.V)              [B]
+CONE SEGMENTS: 28                  [+/-]
 TEXTURES: On                       [T]
-RAY TRACING: Shadows+Reflections [R]   LAVA LIGHT: On [F]
-CONE SEGMENTS: 32                  [+/-]
-TIME: 02:30  NIGHT (auto)          [N]
+RAY TRACING: Off                   [R]
+LAVA LIGHT TRACING: Off            [F]
+TIME: 02:30 NIGHT (auto)           [N]
 CAMERA: Drone 2 (crater lock)      [C/V]
 ---
-ACTIVE DROPLETS:  5 / 8
-ACTIVE ASH PUFFS: 3 / 6
-FLOW ADVANCE (river): 62%
-DISTANCE TO CRATER: 18.4 m         (from the active camera)
-PILOT: ALT 14.2  SPD 9.1           (while piloting)
+ERUPTION: NEXT BURST IN 5.2 S      [E] fire one
+DISTANCE TO CRATER: 18.4 M         (from the active camera)
+CONTROL: ROVER  SPD 7.8  BUMPS 1 (WINDMILL)  [TAB]
+FPS: 60   DRAW CALLS: 1205
 ```
+Each line carries the key that changes it, and a two-line legend along the bottom of the window lists all the keys. (An earlier
+version also showed the number of active droplets and ash puffs and the lava river's advance; they were removed as clutter.)
 The distance readout is the deliberate, checkable evidence for attenuation: as the camera moves away, the HUD number climbs while the rock visibly darkens.
 
 ---
